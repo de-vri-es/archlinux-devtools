@@ -155,6 +155,36 @@ install_packages() {
 	return $ret
 }
 
+# Usage: determine_uid_gid $file [$name]
+determine_uid_gid() {
+	local passwd="$1"
+	local name="${2-builduser}"
+
+	# Start max_id at 999 to make sure the chosen UID/GID is atleast 1000
+	local max_id=999
+
+	# Loop over the lines in the file
+	while read -r line; do
+		# Extract name and UID/GID from the line
+		local IFS=':' fields=($line)
+		local current_name="${fields[0]}"
+		local current_id="${fields[2]}"
+
+		# If we found the entry, print the matching UID/GID and exit
+		if [[ $current_name = $name ]]; then
+			echo "$id"
+			return
+
+		# Ignore nobody and higher when determining the max_id
+		elif (( current_id > max_id && max_id < 65534 )); then
+			let max_id=current_id
+		fi
+	done < "$passwd"
+
+	# Print the highest UID/GID we found, plus 1
+	echo $(( max_id + 1 ))
+}
+
 # Usage: prepare_chroot $copydir $HOME $keepbuilddir $run_namcap
 # Globals:
 #  - MAKEFLAGS
@@ -167,9 +197,8 @@ prepare_chroot() {
 
 	[[ $keepbuilddir = true ]] || rm -rf "$copydir/build"
 
-	local builduser_uid builduser_gid
-	builduser_uid="${SUDO_UID:-$UID}"
-	builduser_gid="$(id -g "$builduser_uid")"
+	local builduser_uid="$(determine_uid_gid "$copydir/etc/passwd" builduser)"
+	local builduser_gid="$(determine_uid_gid "$copydir/etc/group"  builduser)"
 	local install="install -o $builduser_uid -g $builduser_gid"
 	local x
 
